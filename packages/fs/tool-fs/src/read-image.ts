@@ -17,10 +17,34 @@ import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
 import { resolveRegularReadTarget } from './read-target.ts'
+
+/**
+ * Whether the ge-caption vision-to-text gateway is configured to carry images
+ * for a text-only route: the `ge-caption` settings section is enabled and
+ * names a complete vision provider/model. The tool-fs package intentionally
+ * does not depend on the gateway plugin; it reads the shared settings section
+ * and applies the same shape the gateway's own schema resolves.
+ * @param ctx - the plugin context used to resolve the optional `settings` service.
+ * @returns whether the gateway would turn image blocks into caption text.
+ */
+export async function gatewayCanCarryImages(ctx: Context): Promise<boolean> {
+  const settings = ctx.get('settings')
+  if (settings === undefined) return false
+  const section = settings.get(settingsNamespace('ge-caption')) as
+    | { enabled?: boolean; vision?: { provider?: string; model?: string } }
+    | undefined
+  return section?.enabled === true
+    && section.vision !== undefined
+    && typeof section.vision.provider === 'string'
+    && section.vision.provider.length > 0
+    && typeof section.vision.model === 'string'
+    && section.vision.model.length > 0
+}
 
 /** Extensions `read_image` accepts; magic-byte validation at the attachment service stays authoritative. */
 const IMAGE_EXTENSIONS: Readonly<Record<string, ImageMediaType>> = {
@@ -54,9 +78,12 @@ export function imageMediaTypeForPath(filePath: string): ImageMediaType | undefi
 }
 
 /**
- * Enforce the strict image-capability gate for the calling route. Resolves the
+ * Enforce the image-capability gate for the calling route. Resolves the
  * session's latest routed provider/model (request header config, then agent
- * options) and requires the exact resolved route to declare `image` input explicitly.
+ * options) and requires the exact resolved route to declare `image` input
+ * explicitly — unless the ge-caption vision-to-text gateway is image-capable,
+ * in which case the image is admitted because the gateway converts it to
+ * caption text before it reaches any text-only route's adapter.
  * @param ctx - the plugin context used to resolve the optional `llm` service.
  * @param exec - the tool-execution context supplying the calling agent.
  * @param requestedPath - the raw, not-yet-resolved path rendered in refusal messages.
@@ -70,8 +97,9 @@ export async function assertImageCapableRoute(ctx: Context, exec: ToolExecution,
     throw new Error(`cannot read "${requestedPath}" as an image: the current model route could not be resolved`)
   }
   const active = await llm.resolveModelInfo(provider, model, exec.signal)
-  if (active.inputModalities === undefined || !active.inputModalities.includes('image')) {
-    throw new Error(`cannot read "${requestedPath}" as an image: model "${model}" does not declare image input; switch to an image-capable model to read images`)
+  const routeTakesImages = active.inputModalities !== undefined && active.inputModalities.includes('image')
+  if (!routeTakesImages && !(await gatewayCanCarryImages(ctx))) {
+    throw new Error(`cannot read "${requestedPath}" as an image: model "${model}" does not declare image input; switch to an image-capable model or enable the ge-caption gateway to read images`)
   }
 }
 

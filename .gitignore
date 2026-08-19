@@ -38,3 +38,7 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# pnpm store resolved as a literal relative dir (store-dir misconfig on this machine)
+%LOCALAPPDATA%/
+

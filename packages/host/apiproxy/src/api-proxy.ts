@@ -236,6 +236,30 @@ function messagesHaveImage(messages: readonly { content: readonly ContentBlock[]
   return messages.some(message => contentHasImage(message.content))
 }
 
+/**
+ * Whether the ge-caption vision-to-text gateway is configured to carry images
+ * for a text-only route: the `ge-caption` settings section is enabled and
+ * names a complete vision provider/model. Image-admission gates consult this
+ * when the session's current model declares no image input: the gateway will
+ * convert the image to caption text before it reaches any text-only adapter,
+ * so the image may be admitted.
+ * @param ctx - the host context exposing the settings seam.
+ * @returns whether the gateway would turn image blocks into caption text.
+ */
+function gatewayCanCarryImages(ctx: Context): boolean {
+  const settings = ctx.get('settings')
+  if (settings === undefined) return false
+  const section = settings.get(settingsNamespace('ge-caption')) as
+    | { enabled?: boolean; vision?: { provider?: string; model?: string } }
+    | undefined
+  return section?.enabled === true
+    && section.vision !== undefined
+    && typeof section.vision.provider === 'string'
+    && section.vision.provider.length > 0
+    && typeof section.vision.model === 'string'
+    && section.vision.model.length > 0
+}
+
 /** Resolve the first reference matching one opaque id. */
 function referencedImage(events: readonly SessionEvent[], attachmentId: string): ImageAttachmentRef | undefined {
   for (const event of events) {
@@ -253,7 +277,7 @@ function referencedImage(events: readonly SessionEvent[], attachmentId: string):
  * that choice write it through `settings.update`, so it has to cross the
  * configuration boundary or the pickers silently fail to persist.
  */
-const PRODUCT_SETTINGS_NAMESPACES = new Set(['ui-onboarding', AGENT_PRESET_SETTINGS_NAMESPACE])
+const PRODUCT_SETTINGS_NAMESPACES = new Set(['ui-onboarding', AGENT_PRESET_SETTINGS_NAMESPACE, 'ge-caption'])
 
 /** Strict browser-zone profile: UTC or an IANA Area/Location-style identifier. */
 const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
@@ -2296,10 +2320,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               .some(message => contentHasImage(message.content))
             if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {
               const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model)
-              if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+              // Refuse only when the target route explicitly declares text-only
+              // input and no vision-to-text gateway is configured to carry the
+              // image. Unknown modality keeps the historical admit behavior.
+              if (info.inputModalities !== undefined
+                && !info.inputModalities.includes('image')
+                && !gatewayCanCarryImages(ctx)) {
                 return err(request, {
                   code: 'model-unavailable',
-                  message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,
+                  message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model or enable the ge-caption gateway.`,
                   details: { provider, model },
                 })
               }
@@ -2485,10 +2514,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (hasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
-              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
+              // Refuse only when the route explicitly declares text-only input
+              // and no vision-to-text gateway is configured to carry the image.
+              // Unknown modality keeps the historical admit behavior.
+              if (modelInfo.inputModalities !== undefined
+                && !modelInfo.inputModalities.includes('image')
+                && !gatewayCanCarryImages(ctx)) {
                 return err(request, {
                   code: 'attachment-error',
-                  message: `Model "${current.model}" does not support image input.`,
+                  message: `Model "${current.model}" does not support image input. Enable the ge-caption gateway to let it reason over images.`,
                   details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
                 })
               }
