@@ -110,17 +110,20 @@ export class TestWorkspaces implements IWorkspaces {
 
   /**
    * Browse listing (recorded). The default serves an empty home level; stub
-   * to shape a tree.
-   * @param path - absolute directory to list; absent lists the home level.
+   * to shape a tree. `root` scopes the browse (the file browser); omitting it
+   * browses the Home (the directory picker) — the double mirrors the host.
+   * @param root - optional workspace root.
+   * @param path - absolute directory to list; absent lists `root` (or the home level).
+   * @param signal - caller lifetime, recorded like the production face.
    * @returns the level's listing.
    */
-  async listDirectory(path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
+  async listDirectory(root: string | undefined, path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
     // The signal is recorded and forwarded like the production face passes
     // it to the wire, so cancellation integration tests can observe or
     // reject on a superseded scan.
-    this.calls.push({ method: 'listDirectory', args: [path, signal] })
+    this.calls.push({ method: 'listDirectory', args: [root, path, signal] })
     const stub = this.stubs.get('listDirectory')
-    if (stub !== undefined) return await (stub(path, signal) as Promise<DirectoryListing>)
+    if (stub !== undefined) return await (stub(root, path, signal) as Promise<DirectoryListing>)
     // The chain runs root-to-target inclusive, per the DirectoryListing
     // contract — a bare root crumb would mislabel the level in browsers
     // driven by this double.
@@ -128,9 +131,9 @@ export class TestWorkspaces implements IWorkspaces {
       path: '/home/test',
       home: '/home/test',
       crumbs: [
-        { name: '/', path: '/', hidden: false },
-        { name: 'home', path: '/home', hidden: false },
-        { name: 'test', path: '/home/test', hidden: false },
+        { name: '/', path: '/', hidden: false, kind: 'directory' },
+        { name: 'home', path: '/home', hidden: false, kind: 'directory' },
+        { name: 'test', path: '/home/test', hidden: false, kind: 'directory' },
       ],
       entries: [],
       truncated: false,
@@ -139,15 +142,31 @@ export class TestWorkspaces implements IWorkspaces {
 
   /**
    * Browse child creation (recorded). The default joins parent and name.
+   * @param root - optional workspace root (mirrors the host scope fence).
    * @param path - absolute existing parent directory.
    * @param name - single path segment.
    * @returns the created directory's absolute path.
    */
-  async createDirectory(path: string, name: string): Promise<string> {
-    this.calls.push({ method: 'createDirectory', args: [path, name] })
+  async createDirectory(root: string | undefined, path: string, name: string): Promise<string> {
+    this.calls.push({ method: 'createDirectory', args: [root, path, name] })
     const stub = this.stubs.get('createDirectory')
-    if (stub !== undefined) return await (stub(path, name) as Promise<string>)
+    if (stub !== undefined) return await (stub(root, path, name) as Promise<string>)
     return `${path}/${name}`
+  }
+
+  /**
+   * Text-file read (recorded). The default returns a canned one-line body.
+   * @param root - optional workspace root (mirrors the host scope fence).
+   * @param path - absolute host path of the file.
+   * @param maxBytes - inclusive byte cap (recorded; the default ignores it).
+   * @param signal - caller lifetime, recorded like the production face.
+   * @returns the canned bounded preview.
+   */
+  async readTextFile(root: string | undefined, path: string, maxBytes?: number, signal?: AbortSignal): Promise<{ path: string; text: string; truncated: boolean }> {
+    this.calls.push({ method: 'readTextFile', args: [root, path, maxBytes, signal] })
+    const stub = this.stubs.get('readTextFile')
+    if (stub !== undefined) return await (stub(root, path, maxBytes, signal) as Promise<{ path: string; text: string; truncated: boolean }>)
+    return { path, text: 'hello from the test double', truncated: false }
   }
 
   /**

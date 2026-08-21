@@ -40,19 +40,35 @@ export interface IWorkspaces {
    */
   pickDirectory(): Promise<string | null>
   /**
-   * List one directory level through the Host's `browse` capability.
-   * @param path - absolute directory to list; absent lists the Host home directory.
+   * List one directory level through the Host's `browse` capability. Passing
+   * `root` scopes the browse to the current session's workspace (the file
+   * browser); omitting it browses from the Host home (the directory picker).
+   * @param root - optional current-session workspace directory (already registered).
+   * @param path - absolute directory to list; absent lists `root` (or the Home).
    * @param signal - aborts the wire request (and the Host's scan) when the caller supersedes it.
    * @returns the level's listing with breadcrumb ancestry.
    */
-  listDirectory(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  listDirectory(root: string | undefined, path?: string, signal?: AbortSignal): Promise<DirectoryListing>
   /**
-   * Create one child directory through the Host's `browse` capability.
+   * Create one child directory through the Host's `browse` capability, scoped
+   * like {@link listDirectory}.
+   * @param root - optional current-session workspace directory (already registered).
    * @param path - absolute existing parent directory.
    * @param name - single non-blank path segment.
    * @returns the created directory's absolute path.
    */
-  createDirectory(path: string, name: string): Promise<string>
+  createDirectory(root: string | undefined, path: string, name: string): Promise<string>
+  /**
+   * Read a text file through the Host's browse-adjacent read capability, with
+   * a bounded byte cap (for in-app preview), scoped to the current session's
+   * workspace when `root` is given.
+   * @param root - optional current-session workspace directory (already registered).
+   * @param path - absolute host path of the file.
+   * @param maxBytes - inclusive byte cap on the returned content.
+   * @param signal - aborts the wire request (and the Host's read) when the caller supersedes it.
+   * @returns the bounded decoded text plus whether it was cut at the cap.
+   */
+  readTextFile(root: string | undefined, path: string, maxBytes?: number, signal?: AbortSignal): Promise<{ path: string; text: string; truncated: boolean }>
   /**
    * Open a filesystem path with the Host operating system's default application.
    * @param path - absolute or host-resolvable path.

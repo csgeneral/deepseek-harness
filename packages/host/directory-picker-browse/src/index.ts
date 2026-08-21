@@ -1,11 +1,12 @@
 /**
  * Browse backend of the directory-picker seam: registers `ctx.directoryPicker`
- * with the `browse` capability — one-level directory listing and child-directory
- * creation over the host filesystem via Node's stdlib (which already carries
- * the per-OS adaptation). Nothing renders on the host display, so this backend
- * serves remote clients the dialog backend cannot. Policy decisions (hidden
- * entries flagged but returned, symlinks followed, whole-filesystem scope) are
- * recorded in the directory-picker seam Agent Note.
+ * with the `browse` capability — one-level directory/file listing and
+ * child-directory creation over the host filesystem via Node's stdlib (which
+ * already carries the per-OS adaptation). Nothing renders on the host
+ * display, so this backend serves remote clients the dialog backend cannot.
+ * Policy decisions (hidden entries flagged but returned, symlinks followed,
+ * whole-filesystem scope) are recorded in the directory-picker seam Agent
+ * Note.
  * @module @deepseek-ai/dsh-host-directory-picker-browse
  */
 
@@ -31,7 +32,8 @@ function ancestryCrumbs(target: string): DirectoryEntry[] {
   for (;;) {
     const parent = dirname(current)
     // basename of a root is '' — label the root crumb by its full path ('/', 'C:\').
-    crumbs.unshift({ name: parent === current ? current : basename(current), path: current, hidden: false })
+    // Breadcrumb rows are directories by construction.
+    crumbs.unshift({ name: parent === current ? current : basename(current), path: current, kind: 'directory', hidden: false })
     if (parent === current) return crumbs
     current = parent
   }
@@ -59,6 +61,8 @@ export interface ListingCandidate {
   name: string
   /** Dirent says directory (no probe needed). */
   isDirectory: boolean
+  /** Dirent says regular file (no probe needed). */
+  isFile: boolean
   /** Dirent says symlink (enterability needs a stat probe). */
   isSymbolicLink: boolean
 }
@@ -150,31 +154,32 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * One listing row for a dirent, following symlinks to directories; null for
- * non-directories and broken/cyclic links (skipped silently — the browser
- * shows what can be entered, and a broken link cannot).
+ * One listing row for a dirent, following symlinks to their kind; null for
+ * non-directory/non-file special nodes and broken/cyclic links (skipped
+ * silently — the browser shows what a row can be: an enterable directory or
+ * a leaf file, and a broken link cannot be either).
  */
 async function directoryRow(
-  parent: string, name: string, isDirectory: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
+  parent: string, name: string, isDirectory: boolean, isFile: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
 ): Promise<DirectoryEntry | null> {
   const path = join(parent, name)
-  let enterable = isDirectory
-  if (!enterable && isSymbolicLink) {
+  let kind: 'directory' | 'file' | null = isDirectory ? 'directory' : isFile ? 'file' : null
+  if (kind === null && isSymbolicLink) {
     try {
       // The probe races the caller too: a symlink target on a stalled
       // network filesystem must not keep a departed caller's request alive.
-      enterable = (await raceAbort(stat(path), signal)).isDirectory()
+      kind = (await raceAbort(stat(path), signal)).isDirectory() ? 'directory' : 'file'
     } catch {
       /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
       if (signal?.aborted) throw asError(signal.reason)
-      // Broken or cyclic symlink: stat is the probe, failure means "not enterable".
+      // Broken or cyclic symlink: stat is the probe, failure means "not a row".
       return null
     }
   }
-  if (!enterable) return null
+  if (kind === null) return null
   // POSIX hidden convention; Windows' hidden attribute is not exposed by
   // dirents (Known Limitations). The client owns whether hidden rows show.
-  return { name, path, hidden: name.startsWith('.') }
+  return { name, path, kind, hidden: name.startsWith('.') }
 }
 
 /** Validated plugin configuration. */
@@ -187,7 +192,7 @@ export interface Config {
 export default class BrowseDirectoryPicker extends DirectoryPicker {
   /**
    * `maxEntries` bounds the complete listing level a single `list` call may
-   * materialize and put on the wire: at most this many child-directory rows
+   * materialize and put on the wire: at most this many directory/file rows
    * (hidden rows included), with `truncated` flagging a cut level. The
    * default follows GitHub's web UI, which truncates directory listings at
    * 1,000 entries.
@@ -254,10 +259,17 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
         for (;;) {
           const dirent = await raceAbort(level.read(), signal)
           if (dirent === null) break
-          // Only rows a browser could enter contend for the window; dirent
-          // says "directory" outright, a symlink needs the later stat probe.
-          if (!dirent.isDirectory() && !dirent.isSymbolicLink()) continue
-          const candidate = { name: dirent.name, isDirectory: dirent.isDirectory(), isSymbolicLink: dirent.isSymbolicLink() }
+          // Every directory or file row contends for the window; special
+          // nodes (sockets, FIFOs, devices) are skipped — a browser has no
+          // row for them. Dirent says "directory"/"file" outright, a
+          // symlink needs the later stat probe.
+          if (!dirent.isDirectory() && !dirent.isFile() && !dirent.isSymbolicLink()) continue
+          const candidate = {
+            name: dirent.name,
+            isDirectory: dirent.isDirectory(),
+            isFile: dirent.isFile(),
+            isSymbolicLink: dirent.isSymbolicLink(),
+          }
           if (boundedInsert(window, candidate, keep)) evicted = true
         }
       } finally {
@@ -285,7 +297,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       // A caller that departed between reads and probes stops before the
       // next probe (each probe's own await is raced inside directoryRow).
       signal?.throwIfAborted()
-      const row = await directoryRow(target, candidate.name, candidate.isDirectory, candidate.isSymbolicLink, signal)
+      const row = await directoryRow(target, candidate.name, candidate.isDirectory, candidate.isFile, candidate.isSymbolicLink, signal)
       if (row === null) continue
       if (entries.length === this.config.maxEntries) {
         truncated = true

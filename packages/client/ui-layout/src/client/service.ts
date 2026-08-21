@@ -5,8 +5,9 @@
  * the per-session active view dissolved into ui-conversation's session store
  * (its only consumer). What remains here is the contract other plugins'
  * apply worlds reach for panel transitions (sidebar toggle from ui-sidebar,
- * details open/close from ui-conversation) — writes stay inside the store's
- * declared action set, delivered as the registration's bound actions.
+ * details open/close from ui-conversation, files open/close from ui-files) —
+ * writes stay inside the store's declared action set, delivered as the
+ * registration's bound actions.
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
@@ -27,6 +28,10 @@ export interface ILayout {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
+  /** Open the files panel (no-op when already open). */
+  openFiles(): void
+  /** Close the files panel. */
+  closeFiles(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -57,6 +62,16 @@ export class LayoutController implements ILayout {
   /** Close the details panel. */
   closeDetails(): void {
     this.#require().closeDetails()
+  }
+
+  /** Open the files panel (no-op when already open). */
+  openFiles(): void {
+    this.#require().openFiles()
+  }
+
+  /** Close the files panel. */
+  closeFiles(): void {
+    this.#require().closeFiles()
   }
 
   #require(): PanelActions {

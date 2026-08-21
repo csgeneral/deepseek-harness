@@ -68,7 +68,11 @@ export async function serveStatic(
   }
   const serveIndex = async (): Promise<void> => {
     const body = await renderIndex()
-    res.writeHead(200, { 'content-type': MIME['.html'] })
+    // The index embeds the per-bundle rev hashes (window.__DSH_BOOT__), so it
+    // must never be served from cache: a cached index would pin stale bundle
+    // URLs long after a rebuild. no-store, not no-cache, so even a heuristic
+    // cache cannot answer without revalidating.
+    res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' })
     res.end(body)
   }
   if (target === distRoot || target === distIndex) {

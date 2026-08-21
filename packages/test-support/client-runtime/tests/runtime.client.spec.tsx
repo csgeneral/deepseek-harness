@@ -380,15 +380,15 @@ describe('workspaces', () => {
   it('records the browse calls: listDirectory serves an empty home, createDirectory joins, stubs override', async () => {
     const runtime = await runtimeWithFrame()
     // Defaults: an empty home level and parent/name joining.
-    await expect(runtime.workspaces.listDirectory()).resolves.toMatchObject({ path: '/home/test', entries: [] })
+    await expect(runtime.workspaces.listDirectory(undefined)).resolves.toMatchObject({ path: '/home/test', entries: [] })
     await expect(runtime.workspaces.listDirectory('/home/test')).resolves.toMatchObject({ path: '/home/test' })
-    await expect(runtime.workspaces.createDirectory('/home/test', 'fresh')).resolves.toBe('/home/test/fresh')
+    await expect(runtime.workspaces.createDirectory(undefined, '/home/test', 'fresh')).resolves.toBe('/home/test/fresh')
     // The recorded signal seat mirrors the production face (undefined here;
     // cancellation tests pass and observe a real one).
     expect(runtime.workspaces.calls).toEqual([
-      { method: 'listDirectory', args: [undefined, undefined] },
-      { method: 'listDirectory', args: ['/home/test', undefined] },
-      { method: 'createDirectory', args: ['/home/test', 'fresh'] },
+      { method: 'listDirectory', args: [undefined, undefined, undefined] },
+      { method: 'listDirectory', args: ['/home/test', undefined, undefined] },
+      { method: 'createDirectory', args: [undefined, '/home/test', 'fresh'] },
     ])
     // Stubs replace the defaults like every sibling method.
     const listing = { path: '/x', home: '/x', crumbs: [], entries: [] }
@@ -396,10 +396,10 @@ describe('workspaces', () => {
     runtime.workspaces.stub('listDirectory', listStub)
     runtime.workspaces.stub('createDirectory', vi.fn(() => Promise.resolve('/x/made' as never)))
     const scan = new AbortController()
-    await expect(runtime.workspaces.listDirectory('/x', scan.signal)).resolves.toBe(listing)
+    await expect(runtime.workspaces.listDirectory('/x', undefined, scan.signal)).resolves.toBe(listing)
     // The stub receives the signal too, like the production face gives the wire.
-    expect(listStub).toHaveBeenLastCalledWith('/x', scan.signal)
-    await expect(runtime.workspaces.createDirectory('/x', 'made')).resolves.toBe('/x/made')
+    expect(listStub).toHaveBeenLastCalledWith('/x', undefined, scan.signal)
+    await expect(runtime.workspaces.createDirectory(undefined, '/x', 'made')).resolves.toBe('/x/made')
     await runtime.dispose()
   })
 })

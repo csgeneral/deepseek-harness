@@ -1585,12 +1585,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return directoryTree.get(parent)?.includes(name) === true ? [] : undefined
   }
-  const crumbsOf = (path: string): { name: string; path: string; hidden: boolean }[] => {
-    const crumbs = [{ name: '/', path: '/', hidden: false }]
+  const crumbsOf = (path: string): { name: string; path: string; hidden: boolean; kind: 'directory' }[] => {
+    const crumbs: { name: string; path: string; hidden: boolean; kind: 'directory' }[] = [{ name: '/', path: '/', hidden: false, kind: 'directory' }]
     let acc = ''
     for (const segment of path.split('/').filter(Boolean)) {
       acc += `/${segment}`
-      crumbs.push({ name: segment, path: acc, hidden: false })
+      crumbs.push({ name: segment, path: acc, hidden: false, kind: 'directory' })
     }
     return crumbs
   }
@@ -2539,8 +2539,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           path: target,
           home: FIXTURE_HOME,
           crumbs: crumbsOf(target),
+          // The fixture tree holds only directories; every row is a directory entry.
           entries: [...children].sort((a, b) => a.localeCompare(b))
-            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
+            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, kind: 'directory' as const, hidden: name.startsWith('.') })),
           // The fixture tree is tiny; no level ever reaches a backend bound.
           truncated: false,
         })
@@ -2560,6 +2561,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         directoryTree.set(parent, [...children, request.payload.name])
         directoryTree.set(target, [])
         return ok(request, { path: target })
+      },
+      readTextFile: (request) => {
+        // The fixture tree is a directory map only; no file content exists.
+        return err(request, { code: 'file-unreadable', message: 'fixture tree has no file contents', details: { path: request.payload.path } })
       },
       openPath: request => ok(request, { opened: true as const }),
     },
@@ -3097,6 +3102,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
+      case 'host.readTextFile': return this.api.host.readTextFile(request, new AbortController().signal)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)

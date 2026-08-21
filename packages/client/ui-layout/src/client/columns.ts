@@ -1,22 +1,22 @@
 /**
- * Pure concession-chain column solver for the three-column AppFrame.
+ * Pure concession-chain column solver for the four-column AppFrame.
  * Chain order is fixed by contract: keep center >= CENTER_MIN by shrinking
- * details, then auto-closing it (derived zero width — preferred width
- * preferences are never rewritten, so widening the window restores them).
- * The sidebar never concedes: its rendered width is always the drag
+ * details, then files, then auto-closing them (derived zero width — preferred
+ * width preferences are never rewritten, so widening the window restores
+ * them). The sidebar never concedes: its rendered width is always the drag
  * preference (or the collapsed rail), and center absorbs any remaining
  * deficit as the last resort. Inputs are the layout store's plain width
  * preferences (0 = closed); a closed sidebar resolves to the fixed
- * SIDEBAR_COLLAPSED control rail while closed details resolve to zero width.
- * The SIDEBAR_AUTO_COLLAPSE breakpoint is consumed by AppFrame, which decides
- * the effective sidebar preference before solving; the solver itself stays
- * breakpoint-free.
+ * SIDEBAR_COLLAPSED control rail while closed details/files resolve to zero
+ * width. The SIDEBAR_AUTO_COLLAPSE breakpoint is consumed by AppFrame, which
+ * decides the effective sidebar preference before solving; the solver itself
+ * stays breakpoint-free.
  */
 
 /** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
-export interface Columns { sidebar: number; center: number; details: number }
+export interface Columns { sidebar: number; center: number; details: number; files: number }
 
-// Contract-frozen geometry: the three-column concession chain's fixed points.
+// Contract-frozen geometry: the four-column concession chain's fixed points.
 /** Center column floor; only the final fallback may go below it. */
 export const CENTER_MIN = 640
 /** Sidebar drag clamp floor. */
@@ -37,6 +37,12 @@ export const DETAILS_MIN = 300
 export const DETAILS_MAX = 520
 /** Details width before any user drag. */
 export const DETAILS_DEFAULT = 360
+/** Files drag clamp floor. */
+export const FILES_MIN = 260
+/** Files drag clamp ceiling. */
+export const FILES_MAX = 520
+/** Files width before any user drag. */
+export const FILES_DEFAULT = 320
 
 /**
  * Clamp a panel width into its contract range.
@@ -50,28 +56,52 @@ export function clampWidth(px: number, min: number, max: number): number {
 }
 
 /**
- * Solve the three column widths for one viewport frame. Pure: no hysteresis —
+ * Solve the four column widths for one viewport frame. Pure: no hysteresis —
  * the output is a function of (viewport, preferences) only, so recovery on
  * re-widening is automatic. Preferences re-clamp here because they cross the
  * store boundary and callers may still supply stale ranges.
  * @param viewport - available frame width in px.
  * @param sidebar - sidebar width preference in px (0 = closed).
  * @param details - details width preference in px (0 = closed).
- * @returns resolved widths; details 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
+ * @param files - files width preference in px (0 = closed).
+ * @returns resolved widths; details/files 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
  */
-export function computeColumns(viewport: number, sidebar: number, details: number): Columns {
+export function computeColumns(viewport: number, sidebar: number, details: number, files: number): Columns {
   // The sidebar is fixed at its preference (or the rail) — it never concedes.
   const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
   const d0 = details === 0 ? 0 : clampWidth(details, DETAILS_MIN, DETAILS_MAX)
+  const f0 = files === 0 ? 0 : clampWidth(files, FILES_MIN, FILES_MAX)
 
+  // A closed files preference keeps the original three-column concession
+  // chain byte-for-byte: details concedes, then auto-closes with center
+  // absorbing the remainder.
+  if (f0 === 0) {
+    if (s + d0 + CENTER_MIN <= viewport) return { sidebar: s, center: viewport - s - d0, details: d0, files: 0 }
+    const d1 = d0 === 0 ? 0 : Math.max(DETAILS_MIN, viewport - s - CENTER_MIN)
+    if (s + d1 + CENTER_MIN <= viewport) return { sidebar: s, center: CENTER_MIN, details: d1, files: 0 }
+    return { sidebar: s, center: Math.max(0, viewport - s), details: 0, files: 0 }
+  }
+
+  // Files is open: the four-column chain. Order is fixed by contract — keep
+  // center >= CENTER_MIN by shrinking details, then files, then auto-closing
+  // details, then files; center absorbs the deficit last.
   // Step 1: everything fits at preferred widths.
-  if (s + d0 + CENTER_MIN <= viewport) return { sidebar: s, center: viewport - s - d0, details: d0 }
+  if (s + d0 + f0 + CENTER_MIN <= viewport) return { sidebar: s, center: viewport - s - d0 - f0, details: d0, files: f0 }
 
-  // Step 2: shrink details toward its minimum.
-  const d1 = d0 === 0 ? 0 : Math.max(DETAILS_MIN, viewport - s - CENTER_MIN)
-  if (s + d1 + CENTER_MIN <= viewport) return { sidebar: s, center: CENTER_MIN, details: d1 }
+  // Step 2: shrink details toward its minimum (files stays at its preference).
+  const d1 = d0 === 0 ? 0 : Math.max(DETAILS_MIN, viewport - s - f0 - CENTER_MIN)
+  if (s + d1 + f0 + CENTER_MIN <= viewport) return { sidebar: s, center: CENTER_MIN, details: d1, files: f0 }
 
-  // Step 3: auto-close details (derived — preferences untouched); center
-  // absorbs any remaining deficit (may drop below CENTER_MIN).
-  return { sidebar: s, center: Math.max(0, viewport - s), details: 0 }
+  // Step 3: shrink files toward its minimum (details keeps its step-2 width).
+  const f1 = Math.max(FILES_MIN, viewport - s - d1 - CENTER_MIN)
+  if (s + d1 + f1 + CENTER_MIN <= viewport) return { sidebar: s, center: CENTER_MIN, details: d1, files: f1 }
+
+  // Step 4: auto-close details (derived — preferences untouched); files keeps
+  // its step-3 width, then shrinks toward its minimum.
+  const f2 = Math.max(FILES_MIN, viewport - s - CENTER_MIN)
+  if (s + f2 + CENTER_MIN <= viewport) return { sidebar: s, center: CENTER_MIN, details: 0, files: f2 }
+
+  // Step 5: auto-close files too; center absorbs any remaining deficit (may
+  // drop below CENTER_MIN).
+  return { sidebar: s, center: Math.max(0, viewport - s), details: 0, files: 0 }
 }

@@ -32,12 +32,14 @@ export const hostPickDirectoryValueSchema = z.object({
 export const directoryEntrySchema = z.object({
   name: z.string(),
   path: z.string(),
+  kind: z.enum(['directory', 'file']),
   hidden: z.boolean(),
 }) satisfies z.ZodType<Wire<DirectoryEntry>>
 
-/** host.listDirectory request payload; an absent path lists the home directory. */
+/** host.listDirectory request payload: optional workspace root plus the level to list. */
 export const hostListDirectoryRequestSchema = z.object({
-  path: z.string().optional(),
+  root: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'host.listDirectory'>>>
 
 /** host.listDirectory response value. */
@@ -49,9 +51,10 @@ export const hostListDirectoryValueSchema = z.object({
   truncated: z.boolean(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.listDirectory'>>>
 
-/** host.createDirectory request payload: name must be one plain path segment. */
+/** host.createDirectory request payload: the parent, the new segment name, and an optional workspace root. */
 export const hostCreateDirectoryRequestSchema = z.object({
-  path: z.string(),
+  root: z.string().min(1).optional(),
+  path: z.string().min(1),
   name: z.string(),
 }).refine(
   payload => payload.name.trim() !== '' && payload.name !== '.' && payload.name !== '..'
@@ -63,6 +66,21 @@ export const hostCreateDirectoryRequestSchema = z.object({
 export const hostCreateDirectoryValueSchema = z.object({
   path: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.createDirectory'>>>
+
+/** host.readTextFile request payload: the file, the byte cap, and an optional workspace root. */
+export const hostReadTextFileRequestSchema = z.object({
+  root: z.string().min(1).optional(),
+  path: z.string().min(1),
+  maxBytes: z.number().int().positive().default(64 * 1024),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.readTextFile'>>>
+
+/** host.readTextFile response value: bounded text plus the truncated flag. */
+export const hostReadTextFileValueSchema = z.object({
+  path: z.string(),
+  text: z.string(),
+  truncated: z.boolean(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.readTextFile'>>>
+
 /** host.openPath request payload. */
 export const hostOpenPathRequestSchema = z.object({
   path: z.string().min(1),

@@ -48,6 +48,17 @@
   border-left: none;
 }
 
+.filesCol {
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* Like details, the files subtree stays mounted at zero width. */
+.frame[data-files-collapsed] .filesCol {
+  border-left: none;
+}
+
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
    centered on the column border via inline left, above column content. Details
    adds a visible 12x32 pill at vertical center; sidebar keeps only the hit strip. */
@@ -103,6 +114,19 @@
 
 .handle[data-side='details']:hover::after,
 .handle[data-side='details'][data-dragging='true']::after {
+  background: var(--dsw-alias-button-floating-hover);
+  border-color: var(--dsw-alias-border-l3);
+}
+
+/* The files handle shows the same pill affordance on its own column strip. */
+.filesCol:hover ~ .handle[data-side='files']::after,
+.handle[data-side='files']:hover::after,
+.handle[data-side='files'][data-dragging='true']::after {
+  opacity: 1;
+}
+
+.handle[data-side='files']:hover::after,
+.handle[data-side='files'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
 }

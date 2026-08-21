@@ -4,8 +4,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, open, stat } from 'node:fs/promises'
+import { dirname, posix, sep, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
@@ -22,7 +22,7 @@ import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-se
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import type { SubagentListEntry as CatalogSubagentListEntry } from '@deepseek-ai/dsh-subagent'
 import { isUserInvocable } from '@deepseek-ai/dsh-skill'
-import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
+import type { Workspace, WorkspaceRecord, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
   WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError,
@@ -654,6 +654,54 @@ function directoryError(error: unknown): RpcError {
     return { code: error.code, message: error.message, details: { path: error.path } }
   }
   return { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} }
+}
+
+/**
+ * True when the path names one fixed filesystem location regardless of process
+ * state — the same fence the browse backend applies: POSIX-absolute on POSIX;
+ * on Windows only drive-qualified (`C:\…`) or complete UNC (`\\server\share…`)
+ * forms. Rooted drive-less forms (`\foo`, `/foo`) and incomplete UNC prefixes
+ * pass `isAbsolute` yet resolve against the process's current drive.
+ * @param path - candidate path.
+ * @returns whether the path is fully qualified on this platform.
+ */
+function isAbsolutePath(path: string): boolean {
+  return process.platform === 'win32'
+    ? win32.isAbsolute(path) && /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/]+[^\\/]+)/.test(path)
+    : posix.isAbsolute(path)
+}
+
+/**
+ * True when `target` is at or under the workspace `root` — the browse-scope
+ * fence. Boundary-safe: `root` itself qualifies, and a child must sit after
+ * a full separator so `/work` does not admit `/workspace`. The root is a
+ * registered canonical path (the seam's own fully-qualified forms), so a
+ * plain prefix check on the separator is sufficient.
+ * @param root - the workspace's canonical path.
+ * @param target - the candidate path to scope-check.
+ * @returns whether `target` stays inside the workspace.
+ */
+function underWorkspaceRoot(root: string, target: string): boolean {
+  if (root === target) return true
+  return target.startsWith(root.endsWith(sep) ? root : root + sep)
+}
+
+/**
+ * True when `root` names a registered workspace directory. The registry
+ * canonicalizes via realpath, so a caller-supplied root that does not resolve
+ * to a registered workspace — or does not exist at all — is rejected at the
+ * scope fence (a nonexistent path surfaces as a not-a-workspace rejection,
+ * not as an internal realpath error).
+ * @param registry - the durable workspace registry.
+ * @param root - the candidate workspace root.
+ * @returns whether the path is a registered workspace.
+ */
+async function isRegisteredWorkspace(registry: WorkspaceRegistry, root: string): Promise<boolean> {
+  try {
+    return (await registry.resolveByPath(root)) !== undefined
+  } catch {
+    return false
+  }
 }
 
 /** Resolved Agent model and project-directory defaults consumed by the API implementation. */
@@ -3001,6 +3049,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async listDirectory(request, signal) {
+        const { root, path } = request.payload
         const capability = ctx.directoryPicker.capability()
         if (capability.kind !== 'browse') {
           return err(request, {
@@ -3009,10 +3058,34 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { capability: capability.kind },
           })
         }
+        // The workspace-scoped file browser sends a root; the picker's
+        // full-disk browse omits it. When present, the root must be a
+        // registered workspace and every listed level must stay under it.
+        // The listed target is `path` when given, else the root itself —
+        // never the browse backend's home fallback for an absent path.
+        // (Both are undefined for the picker's unscoped home browse.)
+        const target = path ?? root
+        if (root !== undefined) {
+          if (!(await isRegisteredWorkspace(ctx.workspaceRegistry, root))) {
+            return err(request, {
+              code: 'directory-unreadable',
+              message: `cannot list "${root}": not a registered workspace`,
+              details: { path: root },
+            })
+          }
+          // In the rooted branch the target always names at least the root.
+          if (target !== undefined && !underWorkspaceRoot(root, target)) {
+            return err(request, {
+              code: 'directory-unreadable',
+              message: `cannot list "${target}": outside the current workspace "${root}"`,
+              details: { path: target },
+            })
+          }
+        }
         try {
           // The carrier's signal follows the caller: a disconnect or timeout
           // stops the backend's directory scan instead of outliving it.
-          return ok(request, await capability.list(request.payload.path, signal))
+          return ok(request, await capability.list(target, signal))
         } catch (error: unknown) {
           // An abort is the caller's own timeout/disconnect, not a server
           // failure — same code pickDirectory and command.execute report.
@@ -3024,6 +3097,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async createDirectory(request) {
+        const { root, path, name } = request.payload
         const capability = ctx.directoryPicker.capability()
         if (capability.kind !== 'browse') {
           return err(request, {
@@ -3032,8 +3106,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { capability: capability.kind },
           })
         }
+        if (root !== undefined
+          && (!(await isRegisteredWorkspace(ctx.workspaceRegistry, root)) || !underWorkspaceRoot(root, path))) {
+          return err(request, {
+            code: 'directory-create-failed',
+            message: `cannot create under "${path}": outside the current workspace "${root}"`,
+            details: { path },
+          })
+        }
         try {
-          return ok(request, { path: await capability.createDirectory(request.payload.path, request.payload.name) })
+          return ok(request, { path: await capability.createDirectory(path, name) })
         } catch (error: unknown) {
           return err(request, directoryError(error))
         }
@@ -3041,6 +3123,54 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async openPath(request, signal) {
         return openPath(request, request.payload.path, signal)
+      },
+
+      async readTextFile(request, signal) {
+        const { root, path } = request.payload
+        // Same fully-qualified fence as the browse listing: a wire value must
+        // never resolve against the host cwd or, on Windows, its current drive.
+        if (!isAbsolutePath(path)) {
+          return err(request, {
+            code: 'file-unreadable',
+            message: `cannot read "${path}": not a fully qualified path`,
+            details: { path },
+          })
+        }
+        // The workspace-scoped file browser sends a root; the preview is
+        // scoped like list, so an unscoped read (no root) keeps working.
+        if (root !== undefined
+          && (!(await isRegisteredWorkspace(ctx.workspaceRegistry, root)) || !underWorkspaceRoot(root, path))) {
+          return err(request, {
+            code: 'file-unreadable',
+            message: `cannot read "${path}": outside the current workspace "${root}"`,
+            details: { path },
+          })
+        }
+        // The request schema defaults the cap; a hand-built request still
+        // needs a floor, so preview stays bounded even on malformed input.
+        const maxBytes = request.payload.maxBytes ?? 64 * 1024
+        try {
+          // Bound the read at the cap: the whole file is never materialized.
+          const handle = await open(path, 'r')
+          try {
+            const bytes = Buffer.alloc(maxBytes)
+            const { bytesRead } = await handle.read(bytes, 0, maxBytes, 0)
+            const truncated = bytesRead === maxBytes
+            const content = bytes.subarray(0, bytesRead).toString('utf8')
+            return ok(request, { path, text: content, truncated })
+          } finally {
+            await handle.close()
+          }
+        } catch (error: unknown) {
+          if (signal.aborted) {
+            return err(request, { code: 'cancelled', message: 'text file read was aborted', details: {} })
+          }
+          return err(request, {
+            code: 'file-unreadable',
+            message: `cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+            details: { path },
+          })
+        }
       },
     },
 

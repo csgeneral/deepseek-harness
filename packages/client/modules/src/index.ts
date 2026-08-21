@@ -446,7 +446,10 @@ export class ClientModuleRegistry extends Service {
       const body = await readFile(path)
       res.writeHead(200, {
         'content-type': isSourceMap ? 'application/json; charset=utf-8' : 'text/javascript; charset=utf-8',
-        'cache-control': 'no-cache',
+        // no-store, not no-cache: a stale bundle is indistinguishable from a
+        // broken build to the developer looking at it, and the browser must
+        // never answer from cache when the source map is requested alongside.
+        'cache-control': 'no-store',
       })
       res.end(body)
     } catch {

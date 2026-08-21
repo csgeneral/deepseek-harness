@@ -30,6 +30,8 @@ export interface DirectoryEntry {
   name: string
   /** Absolute host path — clients never join path segments themselves. */
   path: string
+  /** Entry kind: directories are enterable, files are leaves. Breadcrumb crumbs are always directories. */
+  kind: 'directory' | 'file'
   /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
   hidden: boolean
 }
@@ -45,7 +47,7 @@ export interface DirectoryListing {
    * inclusive; every crumb is a jump target (crumb `hidden` is always false).
    */
   crumbs: DirectoryEntry[]
-  /** Direct child directories, name-sorted; symlinks to directories included. */
+  /** Direct children, name-sorted; symlinks to directories and files included. */
   entries: DirectoryEntry[]
   /**
    * True when the backend cut `entries` at its complete-result bound: the

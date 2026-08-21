@@ -45,12 +45,25 @@ afterAll(async () => {
 })
 
 describe('BrowseDirectoryPicker', () => {
-  it('lists directories only, flags hidden rows, follows symlinks, skips broken links, sorts by name', async () => {
+  it('lists directories and files, flags hidden rows, follows symlinks, skips broken links, sorts by name', async () => {
     const listing = await capability.list(root)
     expect(listing.path).toBe(root)
     expect(listing.home).toBe(homedir())
-    expect(listing.entries.map(entry => entry.name)).toEqual(['.hidden-dir', 'linked', 'projects'])
-    expect(listing.entries.map(entry => entry.hidden)).toEqual([true, false, false])
+    // Directories and regular files both appear, name-sorted; the broken
+    // symlink is filtered out, and the file symlink resolves to a file row
+    // (POSIX only — Windows denies unprivileged file symlinks).
+    const names = listing.entries.map(entry => entry.name)
+    expect(names[0]).toBe('.hidden-dir')
+    expect(names).toContain('linked')
+    expect(names).toContain('projects')
+    expect(names).toContain('notes.txt')
+    expect(names).not.toContain('broken')
+    expect(listing.entries.map(entry => entry.hidden)).toEqual([true, ...names.slice(1).map(() => false)])
+    // Entry kind distinguishes enterable directories from leaf files.
+    const projects = listing.entries.find(entry => entry.name === 'projects')!
+    expect(projects.kind).toBe('directory')
+    const notes = listing.entries.find(entry => entry.name === 'notes.txt')!
+    expect(notes.kind).toBe('file')
     // Every entry path is absolute and host-joined — clients never join segments.
     expect(listing.entries.every(entry => entry.path === join(root, entry.name))).toBe(true)
     // Well under the default bound: the complete level, not a cut one.
@@ -137,7 +150,7 @@ describe('BrowseDirectoryPicker', () => {
   })
 
   it('boundedInsert keeps the window name-sorted and bounded, reporting evictions', () => {
-    const candidate = (name: string): ListingCandidate => ({ name, isDirectory: true, isSymbolicLink: false })
+    const candidate = (name: string): ListingCandidate => ({ name, isDirectory: true, isFile: false, isSymbolicLink: false })
     const window: ListingCandidate[] = []
     expect(boundedInsert(window, candidate('m'), 2)).toBe(false)
     expect(boundedInsert(window, candidate('z'), 2)).toBe(false)

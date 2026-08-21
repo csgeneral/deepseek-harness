@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import {
   DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
+  FILES_DEFAULT, FILES_MAX, FILES_MIN,
   SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
@@ -17,9 +18,9 @@ const PERSIST_KEY = 'dsh.layout.panels'
 beforeEach(() => { localStorage.clear() })
 
 describe('createLayoutStore', () => {
-  it('initializes the sidebar at its default width, details closed, wide viewport assumed', () => {
+  it('initializes the sidebar and files at their defaults, details closed, wide viewport assumed', () => {
     const { store } = createLayoutStore().create()
-    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false })
+    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 0, files: FILES_DEFAULT, narrow: false, narrowExpanded: false })
   })
 
   it('each create() is an independent instance (factory is not a singleton)', () => {
@@ -29,7 +30,7 @@ describe('createLayoutStore', () => {
     expect(b.store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
   })
 
-  it('setSidebar/setDetails clamp into the contract ranges', () => {
+  it('setSidebar/setDetails/setFiles clamp into the contract ranges', () => {
     const { store, actions } = createLayoutStore().create()
     actions.setSidebar(1)
     expect(store.getSnapshot().sidebar).toBe(SIDEBAR_MIN)
@@ -39,6 +40,10 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(DETAILS_MIN)
     actions.setDetails(9999)
     expect(store.getSnapshot().details).toBe(DETAILS_MAX)
+    actions.setFiles(1)
+    expect(store.getSnapshot().files).toBe(FILES_MIN)
+    actions.setFiles(9999)
+    expect(store.getSnapshot().files).toBe(FILES_MAX)
   })
 
   it('toggleSidebar flips closed <-> contract default (drag width forgotten)', () => {
@@ -55,7 +60,7 @@ describe('createLayoutStore', () => {
     actions.setSidebar(400)
     actions.setNarrow(true)
     actions.toggleSidebar()
-    expect(store.getSnapshot()).toEqual({ sidebar: 400, details: 0, narrow: true, narrowExpanded: true })
+    expect(store.getSnapshot()).toEqual({ sidebar: 400, details: 0, files: FILES_DEFAULT, narrow: true, narrowExpanded: true })
     actions.toggleSidebar()
     expect(store.getSnapshot().narrowExpanded).toBe(false)
     expect(store.getSnapshot().sidebar).toBe(400)
@@ -74,7 +79,7 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().narrowExpanded).toBe(false)
   })
 
-  it('openDetails uses the contract default, preserves an open width, and closeDetails zeroes', () => {
+  it('openDetails/openFiles use the contract default, preserve an open width, and close zeroes', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openDetails()
     expect(store.getSnapshot().details).toBe(DETAILS_DEFAULT)
@@ -83,6 +88,13 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(500)
     actions.closeDetails()
     expect(store.getSnapshot().details).toBe(0)
+    actions.openFiles()
+    expect(store.getSnapshot().files).toBe(FILES_DEFAULT)
+    actions.setFiles(480)
+    actions.openFiles()
+    expect(store.getSnapshot().files).toBe(480)
+    actions.closeFiles()
+    expect(store.getSnapshot().files).toBe(0)
   })
 
   it('does not persist panel geometry', () => {
@@ -96,6 +108,7 @@ describe('createLayoutStore', () => {
     expect(second.store.getSnapshot()).toEqual({
       sidebar: SIDEBAR_DEFAULT,
       details: 0,
+      files: FILES_DEFAULT,
       narrow: false,
       narrowExpanded: false,
     })

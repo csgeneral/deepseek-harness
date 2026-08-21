@@ -149,7 +149,8 @@ describe('host.pickDirectory', () => {
   })
 
   it('refuses the native RPC under a browse composition', async () => {
-    const { api } = await harness(undefined, BROWSE_STUB)
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-workspace-')))
+    const { api } = await harness(undefined, browseStub(root))
     const response = await api.host.pickDirectory(request({}), new AbortController().signal)
     expect(response.result).toMatchObject({
       ok: false,
@@ -158,71 +159,99 @@ describe('host.pickDirectory', () => {
   })
 })
 
-/** Canned browse capability: one listing, one created path, typed failures on demand. */
-const BROWSE_STUB: DirectoryPickerCapability = {
-  kind: 'browse',
-  list: async (path) => {
-    if (path === '/denied') throw new DirectoryPickerError('directory-unreadable', '/denied', 'cannot list /denied')
-    const target = path ?? '/home/user'
-    return {
-      path: target,
-      home: '/home/user',
-      crumbs: [{ name: '/', path: '/', hidden: false }],
-      entries: [{ name: 'projects', path: `${target}/projects`, hidden: false }],
-      truncated: false,
-    }
-  },
-  createDirectory: async (path, name) => {
-    if (name === 'taken') throw new DirectoryPickerError('directory-exists', `${path}/${name}`, 'already exists')
-    if (name === 'unwritable') throw new Error('disk detached')
-    return `${path}/${name}`
-  },
+/** Canned browse capability rooted at the harness workspace: one listing, one created path, typed failures on demand. */
+function browseStub(root: string): DirectoryPickerCapability {
+  return {
+    kind: 'browse',
+    list: async (path) => {
+      if (path === '/denied') throw new DirectoryPickerError('directory-unreadable', '/denied', 'cannot list /denied')
+      const target = path ?? root
+      return {
+        path: target,
+        home: root,
+        crumbs: [{ name: '/', path: '/', hidden: false, kind: 'directory' }],
+        entries: [{ name: 'projects', path: `${target}/projects`, hidden: false, kind: 'directory' }],
+        truncated: false,
+      }
+    },
+    createDirectory: async (path, name) => {
+      if (name === 'taken') throw new DirectoryPickerError('directory-exists', `${path}/${name}`, 'already exists')
+      if (name === 'unwritable') throw new Error('disk detached')
+      return `${path}/${name}`
+    },
+  }
 }
 
 describe('host.listDirectory / host.createDirectory', () => {
-  it('serves listings and creation through the browse capability, defaulting to home', async () => {
-    const { api } = await harness(undefined, BROWSE_STUB)
-    const home = await api.host.listDirectory(request({}), new AbortController().signal)
-    expect(home.result).toMatchObject({ ok: true, value: { path: '/home/user', home: '/home/user' } })
-    const listed = await api.host.listDirectory(request({ path: '/home/user/projects' }), new AbortController().signal)
-    expect(listed.result).toMatchObject({ ok: true, value: { path: '/home/user/projects' } })
-    const created = await api.host.createDirectory(request({ path: '/home/user', name: 'fresh' }))
-    expect(created.result).toEqual({ ok: true, value: { path: '/home/user/fresh' } })
+  it('serves listings and creation scoped to the registered workspace root', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-workspace-')))
+    const { api, ctx } = await harness(root, browseStub(root))
+    await ctx.workspaceRegistry.create(root)
+    const rootListing = await api.host.listDirectory(request({ root }), new AbortController().signal)
+    expect(rootListing.result).toMatchObject({ ok: true, value: { path: root, home: root } })
+    const child = join(root, 'projects')
+    const listed = await api.host.listDirectory(request({ root, path: child }), new AbortController().signal)
+    expect(listed.result).toMatchObject({ ok: true, value: { path: child } })
+    const created = await api.host.createDirectory(request({ root, path: root, name: 'fresh' }))
+    expect(created.result).toEqual({ ok: true, value: { path: `${root}/fresh` } })
+  })
+
+  it('rejects paths outside the registered workspace root', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-workspace-')))
+    const { api, ctx } = await harness(root, browseStub(root))
+    await ctx.workspaceRegistry.create(root)
+    expect((await api.host.listDirectory(request({ root, path: '/denied' }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'directory-unreadable' },
+    })
+    expect((await api.host.listDirectory(request({ root: '/unregistered', path: root }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'directory-unreadable', details: { path: '/unregistered' } },
+    })
+    expect((await api.host.createDirectory(request({ root, path: '/outside', name: 'x' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-create-failed' },
+    })
   })
 
   it('maps typed picker failures onto the wire error codes and folds unknown throws to internal', async () => {
-    const { api } = await harness(undefined, BROWSE_STUB)
-    expect((await api.host.listDirectory(request({ path: '/denied' }), new AbortController().signal)).result).toMatchObject({
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-workspace-')))
+    const { api, ctx } = await harness(root, browseStub(root))
+    await ctx.workspaceRegistry.create(root)
+    expect((await api.host.listDirectory(request({ root, path: '/denied' }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'directory-unreadable', details: { path: '/denied' } },
     })
-    expect((await api.host.createDirectory(request({ path: '/home/user', name: 'taken' }))).result).toMatchObject({
+    expect((await api.host.createDirectory(request({ root, path: root, name: 'taken' }))).result).toMatchObject({
       ok: false, error: { code: 'directory-exists' },
     })
-    expect((await api.host.createDirectory(request({ path: '/home/user', name: 'unwritable' }))).result).toMatchObject({
+    expect((await api.host.createDirectory(request({ root, path: root, name: 'unwritable' }))).result).toMatchObject({
       ok: false, error: { code: 'internal' },
     })
   })
 
   it('reports an aborted listing as cancelled, like the other signal-following RPCs', async () => {
-    const { api } = await harness(undefined, {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-workspace-')))
+    const { api, ctx } = await harness(root, {
       kind: 'browse',
+      // The scope fence awaits the workspace check before listing, so the
+      // abort can land first — the stub must honor an already-aborted signal.
       list: (_path, signal) => new Promise((_resolve, reject) => {
-        signal?.addEventListener('abort', () => { reject(new Error('scan aborted')) }, { once: true })
+        const onAbort = (): void => { reject(new Error('scan aborted')) }
+        if (signal?.aborted) { onAbort(); return }
+        signal?.addEventListener('abort', onAbort, { once: true })
       }),
       createDirectory: async () => '/never',
     })
+    await ctx.workspaceRegistry.create(root)
     const abort = new AbortController()
-    const pending = api.host.listDirectory(request({}), abort.signal)
+    const pending = api.host.listDirectory(request({ root }), abort.signal)
     abort.abort()
     expect((await pending).result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
   })
 
   it('refuses the browse RPCs under a native composition', async () => {
-    const { api } = await harness()
-    expect((await api.host.listDirectory(request({}), new AbortController().signal)).result).toMatchObject({
+    const { api, root } = await harness()
+    expect((await api.host.listDirectory(request({ root }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
     })
-    expect((await api.host.createDirectory(request({ path: '/x', name: 'y' }))).result).toMatchObject({
+    expect((await api.host.createDirectory(request({ root, path: '/x', name: 'y' }))).result).toMatchObject({
       ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
     })
   })

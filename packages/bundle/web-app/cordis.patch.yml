@@ -183,6 +183,10 @@
     - id: ui-sidebar
       name: '@deepseek-ai/dsh-client-ui-sidebar'
 
+    # In-app file browser: fills the layout-owned 'files' column (rightmost).
+    - id: ui-files
+      name: '@deepseek-ai/dsh-client-ui-files'
+
     - id: ui-settings
       name: '@deepseek-ai/dsh-client-ui-settings'
 

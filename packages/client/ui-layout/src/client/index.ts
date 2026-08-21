@@ -1,7 +1,7 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * four child slots (declaration = exclusive render authority), seats the
+ * five child slots (declaration = exclusive render authority), seats the
  * layout store (panel geometry), and wires the panel-action service face.
  * ctx.layout is the cross-plugin panel-action contract; navigation state lives
  * with the runtime sessions service. A second effect seats the theme
@@ -33,7 +33,7 @@ declare module '@deepseek-ai/cordis' {
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     // The 'root' entry itself is the runtime's built-in slot (declared
-    // there); these four are the frame's children, declared by the same
+    // there); these five are the frame's children, declared by the same
     // register() call that contributes AppFrame. Session owners never pass
     // sessionId: the framework injects it as a standard prop.
     /**
@@ -71,6 +71,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
+     * The rightmost files column, shown when the layout opens it. OCCUPIED by
+     * ui-files' FileBrowserRoot, which renders the in-app file browser —
+     * registering here replaces the column outright. The occupant receives
+     * the frame's live column state (collapsed, width) through the owner
+     * share; `ctx.layout` owns whether the column is open.
+     */
+    'files': { kind: 'single'; scope: 'root'; owner: FilesOwnerProps }
+    /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
      * toast stack or a status pill all belong here, and entries order among
@@ -104,6 +112,14 @@ export interface ConvOwnerProps {}
 /** Details owner share: empty — sessionId arrives as a framework-standard prop. */
 export interface DetailsOwnerProps {}
 
+/** Files owner share: live column state from the frame's concession solve. */
+export interface FilesOwnerProps {
+  /** True when the files column is closed (width 0; the subtree stays mounted). */
+  collapsed: boolean
+  /** Rendered column width in px (0 when collapsed). */
+  width: number
+}
+
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme']
 
@@ -123,6 +139,7 @@ export function apply(ctx: ClientContext): void {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
+        'files': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

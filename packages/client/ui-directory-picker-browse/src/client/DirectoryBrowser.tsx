@@ -105,7 +105,7 @@ function displayCrumbs(listing: DirectoryListing, homeLabel: string): DirectoryE
   const homeIndex = listing.crumbs.findIndex(crumb => crumb.path === listing.home)
   if (homeIndex === -1) return listing.crumbs
   const tail = listing.crumbs.slice(homeIndex + 1)
-  return [{ name: homeLabel, path: listing.home, hidden: false }, ...tail]
+  return [{ name: homeLabel, path: listing.home, hidden: false, kind: 'directory' }, ...tail]
 }
 
 /**
@@ -624,7 +624,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
         if (seq !== requestSeq.current) return
         setParent(level)
         setLoading(false)
-        select({ name, path: createdPath, hidden: false })
+        select({ name, path: createdPath, hidden: false, kind: 'directory' })
       }, (reason: unknown) => {
         /* v8 ignore next -- same fence as navigate/select; the modal blocks superseding input */
         if (seq !== requestSeq.current) return

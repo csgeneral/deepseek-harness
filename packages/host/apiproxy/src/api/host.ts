@@ -11,6 +11,8 @@ export interface DirectoryEntry {
   name: string
   /** Absolute host path — the client never joins path segments itself. */
   path: string
+  /** Entry kind: directories are enterable, files are leaves. Breadcrumb crumbs are always directories. */
+  kind: 'directory' | 'file'
   /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
   hidden: boolean
 }
@@ -26,7 +28,7 @@ export interface DirectoryListing {
    * inclusive; every crumb is a jump target (crumb `hidden` is always false).
    */
   crumbs: DirectoryEntry[]
-  /** Direct child directories, name-sorted; symlinks to directories included. */
+  /** Direct children, name-sorted; symlinks to directories and files included. */
   entries: DirectoryEntry[]
   /** True when the backend cut `entries` at its complete-result bound (the name-sorted tail is absent). */
   truncated: boolean
@@ -62,26 +64,52 @@ export interface HostApi {
   ): Promise<RpcResponse<{ path: string | null }>>
 
   /**
-   * List one directory level for the in-app browser; an absent path lists the
-   * host account's home directory. Only served under the `browse` capability;
-   * unreadable or missing targets fail with `directory-unreadable`. The
-   * carrier's request signal follows the caller, stopping the backend's scan
-   * on disconnect or timeout.
+   * List one directory level for the in-app browser. When `root` is given it
+   * must be a registered workspace and only paths at or under it are served
+   * (the workspace-scoped file browser); without a root the level is served
+   * exactly as before, from the host account's home directory (the directory
+   * picker's full-disk browse — it must reach unregistered paths to create
+   * workspaces). Only served under the `browse` capability; unreadable or
+   * missing targets fail with `directory-unreadable`. The carrier's request
+   * signal follows the caller, stopping the backend's scan on disconnect or
+   * timeout.
    */
   listDirectory(
-    request: RpcRequest<{ path?: string }>,
+    request: RpcRequest<{ root?: string; path?: string }>,
     signal: AbortSignal,
   ): Promise<RpcResponse<DirectoryListing>>
 
   /**
    * Create one child directory under an existing parent (the browser's
-   * "New folder"). Only served under the `browse` capability; an existing
+   * "New folder"). Scoped like {@link listDirectory}: when `root` is given
+   * the parent must be at or under the registered workspace root. An existing
    * child fails with `directory-exists`, every other filesystem failure with
    * `directory-create-failed`.
    */
   createDirectory(
-    request: RpcRequest<{ path: string; name: string }>,
+    request: RpcRequest<{ root?: string; path: string; name: string }>,
   ): Promise<RpcResponse<{ path: string }>>
+
+  /**
+   * Read a text file with a bounded byte cap, for in-app file preview.
+   * Scoped like {@link listDirectory}: when `root` is given the file must be
+   * at or under the registered workspace root. Unreadable or missing targets
+   * fail with `file-unreadable`; a file whose complete content exceeds
+   * `maxBytes` returns the leading prefix with `truncated` set (never an
+   * error — preview is best-effort). The carrier's request signal follows
+   * the caller, stopping the read on disconnect.
+   */
+  readTextFile(
+    request: RpcRequest<{ root?: string; path: string; maxBytes?: number }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<{
+    /** Absolute host path that was read (echoed for the caller's bookkeeping). */
+    path: string
+    /** Decoded text content; at most `maxBytes` bytes. */
+    text: string
+    /** True when the complete file exceeded the cap and `text` is a prefix. */
+    truncated: boolean
+  }>>
 
   /**
    * Open a filesystem path with the operating system's default application

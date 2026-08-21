@@ -24,31 +24,31 @@ function listingFor(path?: string): DirectoryListing {
       path: HOME,
       home: HOME,
       crumbs: [
-        { name: '/', path: '/', hidden: false },
-        { name: 'home', path: '/home', hidden: false },
-        { name: 'u', path: HOME, hidden: false },
+        { name: '/', path: '/', hidden: false, kind: 'directory' as const },
+        { name: 'home', path: '/home', hidden: false, kind: 'directory' as const },
+        { name: 'u', path: HOME, hidden: false, kind: 'directory' as const },
       ],
       entries: [
-        { name: '.config', path: `${HOME}/.config`, hidden: true },
-        { name: 'Documents', path: DOCS, hidden: false },
+        { name: '.config', path: `${HOME}/.config`, hidden: true, kind: 'directory' as const },
+        { name: 'Documents', path: DOCS, hidden: false, kind: 'directory' as const },
       ],
       truncated: false,
     },
     '/': {
       path: '/',
       home: HOME,
-      crumbs: [{ name: '/', path: '/', hidden: false }],
-      entries: [{ name: 'home', path: '/home', hidden: false }],
+      crumbs: [{ name: '/', path: '/', hidden: false, kind: 'directory' as const }],
+      entries: [{ name: 'home', path: '/home', hidden: false, kind: 'directory' as const }],
       truncated: false,
     },
     [`${HOME}/.config`]: {
       path: `${HOME}/.config`,
       home: HOME,
       crumbs: [
-        { name: '/', path: '/', hidden: false },
-        { name: 'home', path: '/home', hidden: false },
-        { name: 'u', path: HOME, hidden: false },
-        { name: '.config', path: `${HOME}/.config`, hidden: true },
+        { name: '/', path: '/', hidden: false, kind: 'directory' as const },
+        { name: 'home', path: '/home', hidden: false, kind: 'directory' as const },
+        { name: 'u', path: HOME, hidden: false, kind: 'directory' as const },
+        { name: '.config', path: `${HOME}/.config`, hidden: true, kind: 'directory' as const },
       ],
       entries: [],
       truncated: false,
@@ -57,23 +57,23 @@ function listingFor(path?: string): DirectoryListing {
       path: DOCS,
       home: HOME,
       crumbs: [
-        { name: '/', path: '/', hidden: false },
-        { name: 'home', path: '/home', hidden: false },
-        { name: 'u', path: HOME, hidden: false },
-        { name: 'Documents', path: DOCS, hidden: false },
+        { name: '/', path: '/', hidden: false, kind: 'directory' as const },
+        { name: 'home', path: '/home', hidden: false, kind: 'directory' as const },
+        { name: 'u', path: HOME, hidden: false, kind: 'directory' as const },
+        { name: 'Documents', path: DOCS, hidden: false, kind: 'directory' as const },
       ],
-      entries: [{ name: 'harness', path: HARNESS, hidden: false }],
+      entries: [{ name: 'harness', path: HARNESS, hidden: false, kind: 'directory' as const }],
       truncated: false,
     },
     [HARNESS]: {
       path: HARNESS,
       home: HOME,
       crumbs: [
-        { name: '/', path: '/', hidden: false },
-        { name: 'home', path: '/home', hidden: false },
-        { name: 'u', path: HOME, hidden: false },
-        { name: 'Documents', path: DOCS, hidden: false },
-        { name: 'harness', path: HARNESS, hidden: false },
+        { name: '/', path: '/', hidden: false, kind: 'directory' as const },
+        { name: 'home', path: '/home', hidden: false, kind: 'directory' as const },
+        { name: 'u', path: HOME, hidden: false, kind: 'directory' as const },
+        { name: 'Documents', path: DOCS, hidden: false, kind: 'directory' as const },
+        { name: 'harness', path: HARNESS, hidden: false, kind: 'directory' as const },
       ],
       entries: [],
       truncated: false,
@@ -516,14 +516,14 @@ describe('DirectoryBrowser', () => {
     const winRoot: DirectoryListing = {
       path: ROOT,
       home: ROOT,
-      crumbs: [{ name: 'C:\\', path: ROOT, hidden: false }],
-      entries: [{ name: 'Users', path: 'C:\\Users', hidden: false }],
+      crumbs: [{ name: 'C:\\', path: ROOT, hidden: false, kind: 'directory' as const }],
+      entries: [{ name: 'Users', path: 'C:\\Users', hidden: false, kind: 'directory' as const }],
       truncated: false,
     }
     const winUsers: DirectoryListing = {
       path: TYPED,
       home: ROOT,
-      crumbs: [{ name: 'C:\\', path: ROOT, hidden: false }, { name: 'users', path: TYPED, hidden: false }],
+      crumbs: [{ name: 'C:\\', path: ROOT, hidden: false, kind: 'directory' as const }, { name: 'users', path: TYPED, hidden: false, kind: 'directory' as const }],
       entries: [],
       truncated: false,
     }
@@ -768,26 +768,26 @@ describe('DirectoryBrowser', () => {
     const ROOT = '/u'
     const MID = `${ROOT}/mid`
     const LEAF = `${MID}/leaf`
-    const chain = [{ name: '/', path: '/', hidden: false }, { name: 'u', path: ROOT, hidden: false }]
+    const chain = [{ name: '/', path: '/', hidden: false, kind: 'directory' as const }, { name: 'u', path: ROOT, hidden: false, kind: 'directory' as const }]
     const tree: Record<string, DirectoryListing> = {
       [ROOT]: {
         path: ROOT,
         home: ROOT,
         crumbs: chain,
-        entries: [{ name: 'mid', path: MID, hidden: false }, { name: 'other', path: `${ROOT}/other`, hidden: false }],
+        entries: [{ name: 'mid', path: MID, hidden: false, kind: 'directory' as const }, { name: 'other', path: `${ROOT}/other`, hidden: false, kind: 'directory' as const }],
         truncated: false,
       },
       [MID]: {
         path: MID,
         home: ROOT,
-        crumbs: [...chain, { name: 'mid', path: MID, hidden: false }],
-        entries: [{ name: 'leaf', path: LEAF, hidden: false }, { name: 'sibling', path: `${MID}/sibling`, hidden: false }],
+        crumbs: [...chain, { name: 'mid', path: MID, hidden: false, kind: 'directory' as const }],
+        entries: [{ name: 'leaf', path: LEAF, hidden: false, kind: 'directory' as const }, { name: 'sibling', path: `${MID}/sibling`, hidden: false, kind: 'directory' as const }],
         truncated: false,
       },
       [LEAF]: {
         path: LEAF,
         home: ROOT,
-        crumbs: [...chain, { name: 'mid', path: MID, hidden: false }, { name: 'leaf', path: LEAF, hidden: false }],
+        crumbs: [...chain, { name: 'mid', path: MID, hidden: false, kind: 'directory' as const }, { name: 'leaf', path: LEAF, hidden: false, kind: 'directory' as const }],
         entries: [],
         truncated: false,
       },
@@ -1110,10 +1110,10 @@ describe('DirectoryBrowser', () => {
     const windowsListing: DirectoryListing = {
       path: ROOT,
       home: ROOT,
-      crumbs: [{ name: 'C:\\', path: ROOT, hidden: false }],
+      crumbs: [{ name: 'C:\\', path: ROOT, hidden: false, kind: 'directory' as const }],
       entries: [
-        { name: 'Program Files', path: `${ROOT}Program Files`, hidden: false },
-        { name: 'Users', path: `${ROOT}Users`, hidden: false },
+        { name: 'Program Files', path: `${ROOT}Program Files`, hidden: false, kind: 'directory' as const },
+        { name: 'Users', path: `${ROOT}Users`, hidden: false, kind: 'directory' as const },
       ],
       truncated: false,
     }
@@ -1213,9 +1213,9 @@ describe('DirectoryBrowser', () => {
       path: '/srv/data',
       home: HOME,
       crumbs: [
-        { name: '/', path: '/', hidden: false },
-        { name: 'srv', path: '/srv', hidden: false },
-        { name: 'data', path: '/srv/data', hidden: false },
+        { name: '/', path: '/', hidden: false, kind: 'directory' as const },
+        { name: 'srv', path: '/srv', hidden: false, kind: 'directory' as const },
+        { name: 'data', path: '/srv/data', hidden: false, kind: 'directory' as const },
       ],
       entries: [],
       truncated: false,
@@ -1265,7 +1265,7 @@ describe('DirectoryBrowser', () => {
     // sequence is about to change.
     const fresh: DirectoryListing = {
       path: `${HOME}/fresh`, home: HOME,
-      crumbs: [...listingFor(HOME).crumbs, { name: 'fresh', path: `${HOME}/fresh`, hidden: false }],
+      crumbs: [...listingFor(HOME).crumbs, { name: 'fresh', path: `${HOME}/fresh`, hidden: false, kind: 'directory' as const }],
       entries: [],
       truncated: false,
     }
@@ -1547,14 +1547,14 @@ describe('DirectoryBrowser', () => {
       if (path === `${DOCS}/fresh`) {
         return {
           path: `${DOCS}/fresh`, home: HOME,
-          crumbs: [...listingFor(DOCS).crumbs, { name: 'fresh', path: `${DOCS}/fresh`, hidden: false }],
+          crumbs: [...listingFor(DOCS).crumbs, { name: 'fresh', path: `${DOCS}/fresh`, hidden: false, kind: 'directory' as const }],
           entries: [],
           truncated: false,
         }
       }
       if (path === DOCS) {
         const docs = listingFor(DOCS)
-        return { ...docs, entries: [...docs.entries, { name: 'fresh', path: `${DOCS}/fresh`, hidden: false }] }
+        return { ...docs, entries: [...docs.entries, { name: 'fresh', path: `${DOCS}/fresh`, hidden: false, kind: 'directory' as const }] }
       }
       return listingFor(path)
     })

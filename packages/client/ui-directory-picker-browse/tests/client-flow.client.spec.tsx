@@ -23,8 +23,8 @@ const HOME = '/home/u'
 const homeListing: DirectoryListing = {
   path: HOME,
   home: HOME,
-  crumbs: [{ name: '/', path: '/', hidden: false }, { name: 'u', path: HOME, hidden: false }],
-  entries: [{ name: 'Documents', path: `${HOME}/Documents`, hidden: false }],
+  crumbs: [{ name: '/', path: '/', hidden: false, kind: 'directory' }, { name: 'u', path: HOME, hidden: false, kind: 'directory' }],
+  entries: [{ name: 'Documents', path: `${HOME}/Documents`, hidden: false, kind: 'directory' }],
   truncated: false,
 }
 
@@ -33,7 +33,7 @@ async function bench() {
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('locale', new LocaleRuntime(ctx))
   const listDirectory = vi.fn(async (): Promise<DirectoryListing> => homeListing)
-  const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
+  const createDirectory = vi.fn(async (_root: string | undefined, path: string, name: string) => `${path}/${name}`)
   ctx.provide('workspaces', { listDirectory, createDirectory } as never)
   const slots = ctx.get('slots') as SlotRegistry
   const declare = () => slots.register({
@@ -185,7 +185,7 @@ describe('directory-picker-browse client half', () => {
     await expect(injected.listDirectory()).resolves.toBe(homeListing)
     await expect(injected.createDirectory(HOME, 'fresh')).resolves.toBe(`${HOME}/fresh`)
     expect(b.listDirectory).toHaveBeenCalledOnce()
-    expect(b.createDirectory).toHaveBeenCalledWith(HOME, 'fresh')
+    expect(b.createDirectory).toHaveBeenCalledWith(undefined, HOME, 'fresh')
   })
 
   it('adapts the owner conversation onto the dialog: confirm picks, dismissal cancels', async () => {

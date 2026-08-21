@@ -20,7 +20,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'files' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
 
 /** Center column grid item (session-body building block). */
@@ -37,7 +37,7 @@ function DetailsColumn(props: { children?: ReactNode }) {
  * One drag handle: pointer capture, rAF-throttled dx reports against the drag-start origin.
  * `side` keys the hover-reveal CSS to the owning column.
  */
-function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart: () => void; onDrag: (dx: number) => void; onEnd: () => void }) {
+function DragHandle(props: { side: 'sidebar' | 'details' | 'files'; left: number; onStart: () => void; onDrag: (dx: number) => void; onEnd: () => void }) {
   const [dragging, setDragging] = useState(false)
   const origin = useRef(0)
   const latest = useRef(0)
@@ -83,7 +83,7 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
   )
 }
 
-/** The three-column frame (see module doc). */
+/** The four-column frame (see module doc). */
 export function AppFrame({
   useStore,
   useSessions,
@@ -139,7 +139,7 @@ export function AppFrame({
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details, panels.files)
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -148,26 +148,34 @@ export function AppFrame({
   // it stays frozen for the whole gesture so dx deltas do not compound.
   const sidebarBase = useRef(0)
   const detailsBase = useRef(0)
+  const filesBase = useRef(0)
   // Track-level transitions pause for the whole gesture: eased tracks would
   // detach the column edge from the pointer (AppFrame.module.css).
   const [dragging, setDragging] = useState(false)
   const onDragEnd = useCallback(() => { setDragging(false) }, [])
   const onSidebarStart = useCallback(() => { sidebarBase.current = colsRef.current.sidebar; setDragging(true) }, [])
   const onDetailsStart = useCallback(() => { detailsBase.current = colsRef.current.details; setDragging(true) }, [])
+  const onFilesStart = useCallback(() => { filesBase.current = colsRef.current.files; setDragging(true) }, [])
   const onSidebarDrag = useCallback((dx: number) => {
     actions.setSidebar(sidebarBase.current + dx)
   }, [actions])
   const onDetailsDrag = useCallback((dx: number) => {
     actions.setDetails(detailsBase.current - dx)
   }, [actions])
+  const onFilesDrag = useCallback((dx: number) => {
+    // The files handle sits at the column's left edge: dragging right
+    // widens it, so dx maps directly to the width preference.
+    actions.setFiles(filesBase.current + dx)
+  }, [actions])
 
   return (
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px ${cols.files}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
+      data-files-collapsed={cols.files === 0 || undefined}
       data-dragging={dragging || undefined}
     >
       <div className={css.sidebarCol}>
@@ -189,13 +197,20 @@ export function AppFrame({
             empty while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
         <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
+        <div className={css.filesCol}>
+          {renderSlot('files', {
+            collapsed: cols.files === 0,
+            width: cols.files,
+          })}
+        </div>
       </>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
       {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details - cols.files} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {cols.files > 0 && <DragHandle side="files" left={viewport - cols.files} onStart={onFilesStart} onDrag={onFilesDrag} onEnd={onDragEnd} />}
     </div>
   )
 }

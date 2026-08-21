@@ -121,14 +121,16 @@ export class FakeApiClient implements IApiClient {
   onListDirectory: (payload: unknown) => Promise<RpcResponse<{
     path: string
     home: string
-    crumbs: { name: string; path: string; hidden: boolean }[]
-    entries: { name: string; path: string; hidden: boolean }[]
+    crumbs: { name: string; path: string; hidden: boolean; kind: 'directory' }[]
+    entries: { name: string; path: string; hidden: boolean; kind: 'directory' | 'file' }[]
     truncated: boolean
   }>> =
-    () => Promise.resolve(ok({ path: '/home/fake', home: '/home/fake', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false }))
+    () => Promise.resolve(ok({ path: '/home/fake', home: '/home/fake', crumbs: [{ name: '/', path: '/', hidden: false, kind: 'directory' }], entries: [], truncated: false }))
 
   onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
     () => Promise.resolve(ok({ path: '/home/fake/new' }))
+  onReadTextFile: (payload: unknown) => Promise<RpcResponse<{ path: string; text: string; truncated: boolean }>> =
+    () => Promise.resolve(ok({ path: '/home/fake/a.txt', text: 'hello', truncated: false }))
 
   private readonly muxConns: StreamConn<MuxFrame>[] = []
   private readonly hostConns: StreamConn<HostFrame>[] = []
@@ -179,6 +181,7 @@ export class FakeApiClient implements IApiClient {
     pickDirectory: (payload: unknown) => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
     listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
+    readTextFile: (payload: unknown) => this.record('host.readTextFile', payload, this.onReadTextFile(payload)),
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 

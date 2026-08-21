@@ -73,8 +73,10 @@ export function apply(ctx: ClientContext): void {
   }, 'directory-picker-browse: dialog dictionaries')
 
   const injected = (): BrowseFlowInjected => ({
-    listDirectory: (path, signal) => ctx.workspaces.listDirectory(path, signal),
-    createDirectory: (path, name) => ctx.workspaces.createDirectory(path, name),
+    // The picker must browse the full disk (it creates workspaces over
+    // unregistered paths), so no workspace root is sent.
+    listDirectory: (path, signal) => ctx.workspaces.listDirectory(undefined, path, signal),
+    createDirectory: (path, name) => ctx.workspaces.createDirectory(undefined, path, name),
     t: ctx.locale.bind(LOCALE_NS),
   })
   // Both declaration lifetimes must be live before the pair installs; the

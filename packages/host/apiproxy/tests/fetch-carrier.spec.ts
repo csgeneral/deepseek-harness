@@ -151,10 +151,13 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }
       },
       async listDirectory(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', kind: 'directory' as const, hidden: false }], entries: [], truncated: false } } }
       },
       async createDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w/new' } } }
+      },
+      async readTextFile(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { path: request.payload.path, text: 'hello', truncated: false } } }
       },
       async openPath(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
@@ -401,14 +404,14 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
 
   it('round-trips the browse listing and creation calls through the wire form', async () => {
     const c = client()
-    const listed = await c.host.listDirectory({ path: '/w' })
+    const listed = await c.host.listDirectory({ root: '/w', path: '/w' })
     expect(listed.result).toEqual({
       ok: true,
-      value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false },
+      value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', kind: 'directory', hidden: false }], entries: [], truncated: false },
     })
-    const home = await c.host.listDirectory({})
+    const home = await c.host.listDirectory({ root: '/w' })
     expect(home.result).toMatchObject({ ok: true, value: { home: '/w' } })
-    const created = await c.host.createDirectory({ path: '/w', name: 'fresh' })
+    const created = await c.host.createDirectory({ root: '/w', path: '/w', name: 'fresh' })
     expect(created.result).toEqual({ ok: true, value: { path: '/w/new' } })
   })
 
